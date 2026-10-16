@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Coconut Dodge · start.ng</title>
+  <meta name="description" content="The palms are dropping coconuts. Dodge them as your start.ng character, catch the naira and survive as long as you can.">
+  <meta name="theme-color" content="#2fa8e0">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Coconut Dodge"></canvas>
+
+  <header class="hud">
+    <div class="startng-card" id="player-card" hidden>
+      <img id="player-face" alt="">
+      <div class="who">
+        <b id="player-name"></b>
+        <span id="player-account"></span>
+      </div>
+      <button id="player-sign-in" type="button" hidden>Sign in</button>
+    </div>
+    <div class="hud-right">
+      <div class="chip" id="hud-lives" aria-label="Lives"></div>
+      <div class="chip"><i class="coin-icon"></i><span id="hud-coins">0</span></div>
+      <div class="chip score"><span id="hud-score">0</span></div>
+      <button class="icon-btn" id="pause-btn" type="button" aria-label="Pause" hidden>
+        <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      </button>
+      <button class="icon-btn" id="mute-btn" type="button" aria-label="Mute sound">
+        <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path id="mute-waves" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path id="mute-cross" d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="panels">
+    <section class="panel" id="menu">
+      <h1>Coconut <span>Dodge</span></h1>
+      <p class="tagline">The palms are dropping coconuts. Dodge them, catch the naira, and survive as long as you can.</p>
+      <ul class="howto">
+        <li><kbd>&larr;</kbd><kbd>&rarr;</kbd> or <kbd>A</kbd><kbd>D</kbd> to move</li>
+        <li>Touch or mouse: drag to move</li>
+        <li>3 bonks and you're out. Hearts heal.</li>
+      </ul>
+      <button class="btn primary" id="play-btn" type="button">Play</button>
+      <div class="signin-prompt" id="menu-signin" hidden>
+        <span>Sign in with start.ng to put your runs on the leaderboard.</span>
+        <button class="btn" id="menu-signin-btn" type="button">Sign in</button>
+      </div>
+      <p class="best" id="menu-best" hidden></p>
+      <h2>Leaderboard</h2>
+      <ol class="board" id="menu-board"></ol>
+    </section>
+
+    <section class="panel" id="over" hidden>
+      <h2 class="over-title">Bonk!</h2>
+      <div class="results">
+        <div><span>Score</span><b id="res-score">0</b></div>
+        <div><span>Coins</span><b id="res-coins">0</b></div>
+        <div><span>Survived</span><b id="res-time">0:00</b></div>
+      </div>
+      <p class="save-msg" id="save-msg"></p>
+      <button class="btn" id="over-signin" type="button" hidden>Sign in with start.ng</button>
+      <button class="btn primary" id="again-btn" type="button">Play again</button>
+      <h2>Leaderboard</h2>
+      <ol class="board" id="over-board"></ol>
+    </section>
+
+    <section class="panel compact" id="paused" hidden>
+      <h2 class="over-title">Paused</h2>
+      <button class="btn primary" id="resume-btn" type="button">Resume</button>
+    </section>
+  </main>
+
+  <script type="module" src="./game.js"></script>
+</body>
+</html>

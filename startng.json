@@ -1,0 +1,9 @@
+{
+  "leaderboard": {
+    "stats": [
+      { "key": "score", "label": "Score", "order": "highest" },
+      { "key": "coins", "label": "Coins caught", "order": "highest" },
+      { "key": "survived", "label": "Time survived", "order": "highest", "format": "time" }
+    ]
+  }
+}
