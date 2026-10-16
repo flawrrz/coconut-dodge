@@ -53,6 +53,17 @@ export const sfx = {
   heart() {
     [660, 880, 1100].forEach((f, i) => tone(f, 0.12, { vol: 0.12, delay: i * 0.07 }));
   },
+  power() {
+    tone(440, 0.3, { type: 'sawtooth', vol: 0.06, slide: 2.5 });
+    [880, 1175].forEach((f, i) => tone(f, 0.12, { type: 'square', vol: 0.05, delay: 0.18 + i * 0.08 }));
+  },
+  block() {
+    tone(1500, 0.12, { type: 'triangle', vol: 0.12, slide: 0.5 });
+    tone(700, 0.1, { vol: 0.08 });
+  },
+  powerEnd() {
+    tone(660, 0.18, { type: 'triangle', vol: 0.08, slide: 0.6 });
+  },
   over() {
     [392, 330, 262, 196].forEach((f, i) => tone(f, 0.22, { type: 'triangle', vol: 0.15, delay: i * 0.14 }));
   },

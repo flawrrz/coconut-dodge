@@ -107,6 +107,49 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 .in-menu .chip { display: none; }
+
+.hud-powers {
+  position: absolute;
+  top: 100%;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chip.power {
+  position: relative;
+  overflow: hidden;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  font-size: 15px;
+}
+.chip.power svg { width: 18px; height: 18px; fill: currentColor; }
+.chip.power::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: calc(var(--left, 1) * 100%);
+  background: currentColor;
+}
+.chip.power.shield { color: #74c0fc; }
+.chip.power.magnet { color: #ff8787; }
+.chip.power.slow { color: #b197fc; }
+.chip.power.ending { animation: blink .25s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+
+.powers-legend { display: flex; justify-content: center; align-items: center; gap: 6px; }
+.pu {
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff inset;
+}
+.pu.shield { background: #4dabf7; }
+.pu.magnet { background: #ff6b6b; }
+.pu.slow { background: #9775fa; }
 .chip.score { min-width: 72px; justify-content: center; color: var(--sun); }
 .chip svg { width: 18px; height: 18px; }
 .chip svg.full { fill: var(--heart); }

@@ -1,6 +1,6 @@
 import { askStartNg, signInUrl, ON_START_NG, CHOSE_GUEST, tidyAddress } from './startng.js';
 import { drawCharacter, normalizeStyle, characterTop, avatarDataUrl, GUEST_STYLE } from './character.js';
-import { Backdrop, drawCoconut, drawCoin, drawHeart } from './scene.js';
+import { Backdrop, drawCoconut, drawCoin, drawHeart, drawPowerUp, POWER_COLORS } from './scene.js';
 import { sfx, unlockAudio, isMuted, setMuted } from './audio.js';
 
 tidyAddress();
@@ -11,6 +11,14 @@ const ctx = canvas.getContext('2d');
 const BEST_KEY = 'coconut-dodge:best';
 const MAX_LIVES = 3;
 const COIN_POINTS = 50;
+const POWERS = {
+  shield: { label: 'Shield!', duration: 7 },
+  magnet: { label: 'Magnet!', duration: 9 },
+  slow: { label: 'Slow-mo!', duration: 6 },
+};
+const SLOW_FACTOR = 0.5;
+const SHIELD_R = 58;
+const MAGNET_RANGE = 280;
 const HEART_SVG = '<svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-9.6-9.4C.9 8 3 4 6.9 4c2.2 0 3.7 1.2 5.1 3 1.4-1.8 2.9-3 5.1-3C21 4 23.1 8 21.6 11.6 19.5 16.4 12 21 12 21z"/></svg>';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -33,7 +41,8 @@ function newRun() {
   return {
     t: 0, coins: 0, lives: MAX_LIVES,
     items: [], particles: [], popups: [],
-    spawnT: 1.1, coinT: 1.8, heartT: rand(16, 24),
+    spawnT: 1.1, coinT: 1.8, heartT: rand(16, 24), powerT: rand(7, 10),
+    power: { shield: 0, magnet: 0, slow: 0 },
     shake: 0, dyingT: 0,
   };
 }
@@ -252,14 +261,25 @@ function spawnCoconut() {
   });
 }
 
-function spawnPickup(kind) {
+function spawnPickup(kind, type) {
   const { u, x0, x1 } = view;
-  const r = (kind === 'coin' ? 13 : 14) * u;
+  const r = (kind === 'coin' ? 13 : kind === 'power' ? 16 : 14) * u;
   run.items.push({
-    kind, x: rand(x0 + r + 10 * u, x1 - r - 10 * u), y: -r, r,
+    kind, type, x: rand(x0 + r + 10 * u, x1 - r - 10 * u), y: -r, r,
     vy: (kind === 'coin' ? 200 + Math.min(run.t, 120) * 1.5 : 170) * u, g: 0,
     rot: 0, vr: 0, born: clock,
   });
+}
+
+function spawnPower() {
+  if (run.items.some((it) => it.kind === 'power')) return;
+  const idle = Object.keys(POWERS).filter((p) => run.power[p] <= 0);
+  const choices = idle.length ? idle : Object.keys(POWERS);
+  spawnPickup('power', choices[Math.floor(Math.random() * choices.length)]);
+}
+
+function shieldCenter() {
+  return { x: player.x, y: view.groundY - 46 * view.u };
 }
 
 function burst(x, y, colors, count, power) {
@@ -334,9 +354,16 @@ function update(dt) {
   player.hurtT = Math.max(0, player.hurtT - dt);
   run.shake = Math.max(0, run.shake - dt);
 
+  const slow = run.power.slow > 0 ? SLOW_FACTOR : 1;
+
   if (state === 'play') {
     run.t += dt;
-    run.spawnT -= dt;
+    for (const p of Object.keys(POWERS)) {
+      if (run.power[p] <= 0) continue;
+      run.power[p] = Math.max(0, run.power[p] - dt);
+      if (run.power[p] === 0) sfx.powerEnd();
+    }
+    run.spawnT -= dt * slow;
     if (run.spawnT <= 0) {
       spawnCoconut();
       if (Math.random() < Math.min(0.35, run.t * 0.004)) spawnCoconut();
@@ -352,6 +379,11 @@ function update(dt) {
       if (run.lives < MAX_LIVES) spawnPickup('heart');
       run.heartT = rand(16, 24);
     }
+    run.powerT -= dt;
+    if (run.powerT <= 0) {
+      spawnPower();
+      run.powerT = rand(11, 17);
+    }
   }
 
   if (state === 'dying') {
@@ -361,11 +393,22 @@ function update(dt) {
   }
 
   const live = state === 'play';
+  const shield = live && run.power.shield > 0 ? shieldCenter() : null;
+  const magnet = live && run.power.magnet > 0;
+  const pull = { x: player.x, y: groundY - 50 * u };
   run.items = run.items.filter((it) => {
-    it.vy += it.g * dt;
-    it.y += it.vy * dt;
-    it.rot += it.vr * dt;
+    const k = it.kind === 'coconut' ? slow : 1;
+    it.vy += it.g * dt * k;
+    it.y += it.vy * dt * k;
+    it.rot += it.vr * dt * k;
+    it.pulled = false;
     if (it.kind === 'coconut') {
+      if (shield && Math.hypot(it.x - shield.x, it.y - shield.y) < SHIELD_R * u + it.r) {
+        burst(it.x, it.y, ['#a5d8ff', '#ffffff', '#8a5a2e'], 10, 300);
+        popup(it.x, it.y, 'Blocked!', '#a5d8ff');
+        sfx.block();
+        return false;
+      }
       if (live && player.invuln <= 0 && overlapsPlayer(it, 13, 84, 0.85)) {
         burst(it.x, it.y, ['#6b4219', '#8a5a2e', '#f4f1e8'], 10, 280);
         getHit();
@@ -378,12 +421,26 @@ function update(dt) {
       }
       return true;
     }
+    if (magnet && it.kind === 'coin') {
+      const dx = pull.x - it.x;
+      const dy = pull.y - it.y;
+      if (Math.hypot(dx, dy) < MAGNET_RANGE * u) {
+        it.x += dx * Math.min(1, dt * 7);
+        it.y += dy * Math.min(1, dt * 7);
+        it.pulled = true;
+      }
+    }
     if (live && overlapsPlayer(it, 20, 96, 1)) {
       if (it.kind === 'coin') {
         run.coins += 1;
         popup(it.x, it.y, `+${COIN_POINTS}`, '#ffd43b');
         burst(it.x, it.y, ['#ffd43b', '#fff3a3'], 6, 160);
         sfx.coin();
+      } else if (it.kind === 'power') {
+        run.power[it.type] = POWERS[it.type].duration;
+        popup(it.x, it.y, POWERS[it.type].label, POWER_COLORS[it.type]);
+        burst(it.x, it.y, [POWER_COLORS[it.type], '#ffffff'], 12, 220);
+        sfx.power();
       } else {
         run.lives = Math.min(MAX_LIVES, run.lives + 1);
         popup(it.x, it.y, '+1 life', '#ff4d6d');
@@ -413,7 +470,7 @@ function update(dt) {
   updateHud();
 }
 
-const hud = { score: -1, coins: -1, lives: -1 };
+const hud = { score: -1, coins: -1, lives: -1, powers: {} };
 
 function updateHud(force = false) {
   const score = runScore();
@@ -423,6 +480,18 @@ function updateHud(force = false) {
     hud.lives = run.lives;
     $('hud-lives').innerHTML = Array.from({ length: MAX_LIVES }, (_, i) =>
       HEART_SVG.replace('<svg', `<svg class="${i < run.lives ? 'full' : 'empty'}"`)).join('');
+  }
+  for (const [p, { duration }] of Object.entries(POWERS)) {
+    const left = run.power[p];
+    const key = left > 0 ? `${Math.ceil(left)}:${Math.round((left / duration) * 50)}:${left < 1.5}` : '';
+    if (!force && hud.powers[p] === key) continue;
+    hud.powers[p] = key;
+    const chip = $(`power-${p}`);
+    chip.hidden = !key;
+    if (!key) continue;
+    chip.querySelector('span').textContent = String(Math.ceil(left));
+    chip.style.setProperty('--left', String(left / duration));
+    chip.classList.toggle('ending', left < 1.5);
   }
 }
 
@@ -456,6 +525,13 @@ function render() {
   }
   backdrop.draw(ctx, clock);
 
+  const powered = state === 'play' || state === 'paused';
+  if (powered && run.power.slow > 0) {
+    const fade = Math.min(1, run.power.slow / 0.5, (POWERS.slow.duration - run.power.slow) / 0.3);
+    ctx.fillStyle = `rgba(110,90,250,${0.13 * fade})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
   for (const it of run.items) {
     if (it.kind !== 'coconut') continue;
     const k = clamp(1 - (groundY - it.y) / groundY, 0, 1);
@@ -478,9 +554,58 @@ function render() {
   });
   if (state === 'menu') drawNameTag(player.x, groundY - (characterTop(who.style) + 8) * u, who.name);
 
+  if (powered && run.power.magnet > 0) {
+    const ending = run.power.magnet < 1.5 && Math.floor(run.power.magnet * 8) % 2 === 0;
+    ctx.strokeStyle = `rgba(255,107,107,${ending ? 0.15 : 0.45})`;
+    ctx.lineWidth = 2.5 * u;
+    for (let i = 0; i < 2; i++) {
+      const k = (clock * 0.9 + i * 0.5) % 1;
+      ctx.globalAlpha = 1 - k;
+      ctx.beginPath();
+      ctx.arc(player.x, groundY - 50 * u, (40 + k * 60) * u, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,212,59,0.5)';
+    ctx.setLineDash([4 * u, 6 * u]);
+    ctx.beginPath();
+    for (const it of run.items) {
+      if (!it.pulled) continue;
+      ctx.moveTo(it.x, it.y);
+      ctx.lineTo(player.x, groundY - 50 * u);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (powered && run.power.shield > 0) {
+    const { x, y } = shieldCenter();
+    const r = SHIELD_R * u * (1 + Math.sin(clock * 5) * 0.02);
+    const ending = run.power.shield < 1.5 && Math.floor(run.power.shield * 8) % 2 === 0;
+    ctx.globalAlpha = ending ? 0.35 : 1;
+    const g = ctx.createRadialGradient(x, y, r * 0.55, x, y, r);
+    g.addColorStop(0, 'rgba(77,171,247,0)');
+    g.addColorStop(1, 'rgba(77,171,247,0.38)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(208,235,255,0.95)';
+    ctx.lineWidth = 3 * u;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 4 * u;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.8, Math.PI * 1.15 + clock, Math.PI * 1.4 + clock);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   for (const it of run.items) {
     if (it.kind === 'coconut') drawCoconut(ctx, it.x, it.y, it.r, it.rot);
     else if (it.kind === 'coin') drawCoin(ctx, it.x, it.y, it.r, clock - it.born);
+    else if (it.kind === 'power') drawPowerUp(ctx, it.x, it.y, it.r, it.type, clock - it.born);
     else drawHeart(ctx, it.x, it.y, it.r);
   }
 

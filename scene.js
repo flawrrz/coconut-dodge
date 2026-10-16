@@ -276,6 +276,69 @@ export function drawCoin(ctx, x, y, r, t) {
   ctx.restore();
 }
 
+export const POWER_COLORS = { shield: '#4dabf7', magnet: '#ff6b6b', slow: '#9775fa' };
+
+export function drawPowerUp(ctx, x, y, r, type, t) {
+  const color = POWER_COLORS[type];
+  ctx.save();
+  ctx.translate(x, y);
+  const pulse = 1 + Math.sin(t * 6) * 0.08;
+  const glow = ctx.createRadialGradient(0, 0, r * 0.6, 0, 0, r * 1.9 * pulse);
+  glow.addColorStop(0, 'rgba(255,255,255,0.55)');
+  glow.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.9 * pulse, 0, TAU);
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = r * 0.16;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineCap = 'round';
+  if (type === 'shield') {
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.58);
+    ctx.lineTo(r * 0.46, -r * 0.38);
+    ctx.lineTo(r * 0.4, r * 0.08);
+    ctx.quadraticCurveTo(r * 0.3, r * 0.45, 0, r * 0.6);
+    ctx.quadraticCurveTo(-r * 0.3, r * 0.45, -r * 0.4, r * 0.08);
+    ctx.lineTo(-r * 0.46, -r * 0.38);
+    ctx.closePath();
+    ctx.fill();
+  } else if (type === 'magnet') {
+    ctx.lineWidth = r * 0.26;
+    ctx.lineCap = 'butt';
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.32, -r * 0.45);
+    ctx.lineTo(-r * 0.32, r * 0.02);
+    ctx.arc(0, r * 0.02, r * 0.32, Math.PI, 0, true);
+    ctx.lineTo(r * 0.32, -r * 0.45);
+    ctx.stroke();
+    ctx.fillStyle = '#343a40';
+    ctx.fillRect(-r * 0.45, -r * 0.55, r * 0.26, r * 0.2);
+    ctx.fillRect(r * 0.19, -r * 0.55, r * 0.26, r * 0.2);
+  } else {
+    ctx.lineWidth = r * 0.14;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.5, 0, TAU);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -r * 0.33);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(r * 0.24, r * 0.12);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 export function drawHeart(ctx, x, y, r) {
   ctx.save();
   ctx.translate(x, y);

@@ -32,6 +32,17 @@
         <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path id="mute-waves" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path id="mute-cross" d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
     </div>
+    <div class="hud-powers">
+      <div class="chip power shield" id="power-shield" hidden title="Shield: coconuts bounce off">
+        <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z"/></svg><span></span>
+      </div>
+      <div class="chip power magnet" id="power-magnet" hidden title="Magnet: pulls coins to you">
+        <svg viewBox="0 0 24 24"><path d="M5 3h5v9a2 2 0 0 0 4 0V3h5v9a7 7 0 0 1-14 0z"/></svg><span></span>
+      </div>
+      <div class="chip power slow" id="power-slow" hidden title="Slow-mo: coconuts fall slower">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5v4.6l3.5 2.1-1 1.7L11 12.7V7z"/></svg><span></span>
+      </div>
+    </div>
   </header>
 
   <main class="panels">
@@ -39,9 +50,13 @@
       <h1>Coconut <span>Dodge</span></h1>
       <p class="tagline">The palms are dropping coconuts. Dodge them, catch the naira, and survive as long as you can.</p>
       <ul class="howto">
-        <li><kbd>&larr;</kbd><kbd>&rarr;</kbd> or <kbd>A</kbd><kbd>D</kbd> to move</li>
-        <li>Touch or mouse: drag to move</li>
+        <li><kbd>&larr;</kbd><kbd>&rarr;</kbd> <kbd>A</kbd><kbd>D</kbd> or drag to move</li>
         <li>3 bonks and you're out. Hearts heal.</li>
+        <li class="powers-legend">
+          <i class="pu shield"></i>Shield
+          <i class="pu magnet"></i>Magnet
+          <i class="pu slow"></i>Slow-mo
+        </li>
       </ul>
       <button class="btn primary" id="play-btn" type="button">Play</button>
       <div class="signin-prompt" id="menu-signin" hidden>
