@@ -1,7 +1,7 @@
 import { askStartNg, signInUrl, ON_START_NG, CHOSE_GUEST, tidyAddress } from './startng.js';
 import { drawCharacter, normalizeStyle, characterTop, avatarDataUrl, GUEST_STYLE } from './character.js';
 import { Backdrop, drawCoconut, drawCoin, drawHeart, drawPowerUp, POWER_COLORS } from './scene.js';
-import { sfx, unlockAudio, isMuted, setMuted } from './audio.js';
+import { sfx, unlockAudio, isMuted, setMuted, isMusicOn, setMusicOn, startMusic, stopMusic } from './audio.js';
 
 tidyAddress();
 
@@ -32,6 +32,14 @@ const formatTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).pa
 const ramp = (t) => Math.min(200, t <= 100 ? t : 100 + (t - 100) * 0.4);
 const chainMult = (chain) => (chain >= 6 ? 3 : chain >= 3 ? 2 : 1);
 
+const GAME_URL = 'https://coconut-dodge.start.ng';
+
+// Players who ask the OS for less motion also get less shake, less flicker and no vibration.
+const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+let calm = motionQuery.matches;
+motionQuery.addEventListener('change', (e) => { calm = e.matches; });
+const buzz = (pattern) => { if (!calm) navigator.vibrate?.(pattern); };
+
 const view = { W: 0, H: 0, dpr: 1, u: 1, groundY: 0, x0: 0, x1: 0 };
 let backdrop = null;
 let state = 'menu';
@@ -42,13 +50,14 @@ const COUNTDOWN = 3;
 const who = { user: null, name: 'Guest', account: '', face: null, style: normalizeStyle(GUEST_STYLE) };
 const player = { x: 0, vx: 0, facing: 1, phase: 0, moving: 0, invuln: 0, hurtT: 0, blinkT: 2, fallen: 0 };
 const held = new Map();
-const pointer = { active: false, down: false, x: 0 };
+const pointer = { active: false, down: false, x: 0, grabX: 0, anchor: 0, relative: false };
 let run = newRun();
+let lastStats = null;
 
 function newRun() {
   return {
     t: 0, scoreT: 0, coinScore: 0, bonus: 0, coins: 0, lives: MAX_LIVES,
-    chain: 0, chainT: 0,
+    chain: 0, chainT: 0, best: Number(localStorage.getItem(BEST_KEY)) || 0, beatBest: false,
     items: [], particles: [], popups: [], markers: [],
     spawnT: 1.1, coinT: 1.8, heartT: rand(16, 24), powerT: rand(7, 10), burstT: rand(12, 18),
     warn: null,
@@ -239,12 +248,26 @@ function showPanel(id) {
   document.body.classList.toggle('in-menu', id === 'menu');
 }
 
+function announce(text) {
+  $('announce').textContent = text;
+}
+
+// The menu board is a second view rather than a scroll, so it's reachable on a phone.
+function showMenuBoard(on) {
+  $('menu-play').hidden = on;
+  $('menu-board-view').hidden = !on;
+  if (on) loadBoard($('menu-board'));
+  $(on ? 'menu-back-btn' : 'play-btn').focus();
+}
+
 function startRun() {
   unlockAudio();
+  startMusic();
   sfx.start();
   run = newRun();
   Object.assign(player, { vx: 0, invuln: 0, hurtT: 0, fallen: 0 });
   player.x = (view.x0 + view.x1) / 2;
+  $('score-chip').classList.remove('beat');
   state = 'play';
   showPanel(null);
   updateHud(true);
@@ -285,15 +308,33 @@ function endRun() {
   run.warn = null;
   run.markers = [];
   const stats = { score: runScore(), coins: run.coins, survived: Math.floor(run.t) };
+  lastStats = stats;
+  $('score-chip').classList.remove('beat');
   $('res-score').textContent = stats.score.toLocaleString();
   $('res-coins').textContent = String(stats.coins);
   $('res-time').textContent = formatTime(stats.survived);
   const best = Number(localStorage.getItem(BEST_KEY)) || 0;
   $('over').querySelector('.over-title').textContent = best > 0 && stats.score > best ? 'New best!' : 'Bonk!';
   if (stats.score > best) localStorage.setItem(BEST_KEY, String(stats.score));
+  announce(`Game over. Score ${stats.score.toLocaleString()}, ${stats.coins} coins, survived ${formatTime(stats.survived)}.`);
   showPanel('over');
   $('again-btn').focus();
   saveRun(stats);
+}
+
+function toMenu() {
+  state = 'menu';
+  run = newRun();
+  Object.assign(player, { vx: 0, invuln: 0, hurtT: 0, fallen: 0, moving: 0, facing: 1 });
+  player.x = (view.x0 + view.x1) / 2;
+  lastStats = null;
+  $('score-chip').classList.remove('beat');
+  showMenuBoard(false);
+  showPanel('menu');
+  showMenuBest();
+  updateHud(true);
+  loadBoard($('menu-board'));
+  $('play-btn').focus();
 }
 
 function showMenuBest() {
@@ -450,12 +491,23 @@ function getHit() {
   player.hurtT = 0.5;
   player.invuln = 1.6;
   sfx.bonk();
+  buzz(run.lives <= 0 ? [120, 70, 260] : 90);
   if (run.lives <= 0) {
     state = 'dying';
     run.dyingT = 0;
+    // Power-ups end with the run, so their timers don't freeze or beep during the death animation.
+    for (const p of Object.keys(POWERS)) run.power[p] = 0;
     $('pause-btn').hidden = true;
     sfx.over();
   }
+}
+
+function beatBest() {
+  const { u, groundY } = view;
+  run.beatBest = true;
+  popup(player.x, groundY - 150 * u, 'Beat your best!', '#d8fd71');
+  $('score-chip').classList.add('beat');
+  sfx.best();
 }
 
 // ---------- update ----------
@@ -497,6 +549,7 @@ function update(dt) {
   if (state === 'play') {
     run.t += dt;
     run.scoreT += dt * slow;
+    if (!run.beatBest && run.best > 0 && runScore() > run.best) beatBest();
     if (run.chainT > 0) {
       run.chainT -= dt;
       if (run.chainT <= 0) run.chain = 0;
@@ -757,7 +810,7 @@ function render() {
   ctx.fillStyle = '#e8bf74';
   ctx.fillRect(0, 0, W, H);
   ctx.save();
-  if (run.shake > 0) {
+  if (run.shake > 0 && !calm) {
     const m = (run.shake / 0.35) * 7 * u;
     ctx.translate(rand(-m, m), rand(-m, m));
   }
@@ -784,7 +837,8 @@ function render() {
 
   drawTopWarnings(u);
 
-  const flicker = player.invuln > 0 && state === 'play' && Math.floor(player.invuln * 12) % 2 === 0;
+  const flicker = player.invuln > 0 && state === 'play'
+    && Math.floor(player.invuln * (calm ? 2 : 12)) % 2 === 0;
   drawCharacter(ctx, who.style, {
     x: player.x, y: groundY, scale: u,
     phase: player.phase, moving: player.moving, facing: player.facing,
@@ -792,12 +846,12 @@ function render() {
     hurt: player.hurtT > 0 || state === 'dying' || (state === 'over' && run.lives <= 0),
     blink: player.blinkT < 0,
     fallen: player.fallen,
-    alpha: flicker ? 0.4 : 1,
+    alpha: flicker ? (calm ? 0.7 : 0.4) : 1,
   });
   if (state === 'menu') drawNameTag(player.x, groundY - (characterTop(who.style) + 8) * u, who.name);
 
   if (powered && run.power.magnet > 0) {
-    const ending = run.power.magnet < 1.5 && Math.floor(run.power.magnet * 8) % 2 === 0;
+    const ending = !calm && run.power.magnet < 1.5 && Math.floor(run.power.magnet * 8) % 2 === 0;
     ctx.strokeStyle = `rgba(255,107,107,${ending ? 0.15 : 0.45})`;
     ctx.lineWidth = 2.5 * u;
     for (let i = 0; i < 2; i++) {
@@ -823,7 +877,7 @@ function render() {
   if (powered && run.power.shield > 0) {
     const { x, y } = shieldCenter();
     const r = SHIELD_R * u * (1 + Math.sin(clock * 5) * 0.02);
-    const ending = run.power.shield < 1.5 && Math.floor(run.power.shield * 8) % 2 === 0;
+    const ending = !calm && run.power.shield < 1.5 && Math.floor(run.power.shield * 8) % 2 === 0;
     ctx.globalAlpha = ending ? 0.35 : 1;
     const g = ctx.createRadialGradient(x, y, r * 0.55, x, y, r);
     g.addColorStop(0, 'rgba(77,171,247,0)');
@@ -878,9 +932,10 @@ function render() {
   if (state === 'countdown') {
     const n = Math.ceil(countT);
     const k = countT - Math.floor(countT);
+    const grow = calm ? 1 : 1 + k * 0.35;
     ctx.save();
     ctx.translate(W / 2, H * 0.42);
-    ctx.scale(1 + k * 0.35, 1 + k * 0.35);
+    ctx.scale(grow, grow);
     ctx.globalAlpha = clamp(0.3 + k, 0, 1);
     ctx.font = `900 ${Math.round(110 * u)}px "Trebuchet MS", sans-serif`;
     ctx.lineWidth = 10 * u;
@@ -945,12 +1000,20 @@ addEventListener('blur', () => held.clear());
 canvas.addEventListener('pointerdown', (e) => {
   pointer.down = true;
   pointer.active = true;
-  pointer.x = e.clientX;
+  // A finger covers the character, so touch drags move it by the distance travelled
+  // from where the touch started instead of jumping to the touch point.
+  pointer.relative = e.pointerType !== 'mouse';
+  pointer.grabX = e.clientX;
+  pointer.anchor = player.x;
+  pointer.x = pointer.relative ? player.x : e.clientX;
 });
 addEventListener('pointermove', (e) => {
   if (!pointer.down) return;
   pointer.active = true;
-  pointer.x = e.clientX;
+  const pad = 20 * view.u;
+  pointer.x = pointer.relative
+    ? clamp(pointer.anchor + (e.clientX - pointer.grabX), view.x0 + pad, view.x1 - pad)
+    : e.clientX;
 });
 const release = () => {
   pointer.down = false;
@@ -963,9 +1026,12 @@ $('play-btn').addEventListener('click', startRun);
 $('again-btn').addEventListener('click', startRun);
 $('resume-btn').addEventListener('click', resume);
 $('pause-btn').addEventListener('click', pause);
+$('menu-btn').addEventListener('click', toMenu);
 $('player-sign-in').addEventListener('click', goSignIn);
 $('menu-signin-btn').addEventListener('click', goSignIn);
 $('over-signin').addEventListener('click', goSignIn);
+$('menu-board-btn').addEventListener('click', () => showMenuBoard(true));
+$('menu-back-btn').addEventListener('click', () => showMenuBoard(false));
 
 const muteBtn = $('mute-btn');
 const syncMute = () => {
@@ -978,9 +1044,76 @@ muteBtn.addEventListener('click', () => {
   syncMute();
 });
 
+const musicBtn = $('music-btn');
+const syncMusicBtn = () => {
+  musicBtn.classList.toggle('music-off', !isMusicOn());
+  musicBtn.setAttribute('aria-label', isMusicOn() ? 'Turn music off' : 'Turn music on');
+};
+musicBtn.addEventListener('click', () => {
+  unlockAudio();
+  setMusicOn(!isMusicOn());
+  syncMusicBtn();
+  if (isMusicOn()) startMusic();
+});
+
+// ---------- full screen ----------
+
+const fsBtn = $('fullscreen-btn');
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+const syncFs = () => {
+  const on = !!fsElement();
+  fsBtn.classList.toggle('expanded', on);
+  fsBtn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+};
+fsBtn.hidden = !(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+fsBtn.addEventListener('click', () => {
+  if (fsElement()) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    exit?.call(document)?.catch?.(() => {});
+  } else {
+    const enter = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+    enter?.call(document.documentElement)?.catch?.(() => {});
+  }
+});
+addEventListener('fullscreenchange', syncFs);
+addEventListener('webkitfullscreenchange', syncFs);
+
+// ---------- share ----------
+
+const shareBtn = $('share-btn');
+shareBtn.hidden = !navigator.share && !navigator.clipboard;
+const shareCaption = (label) => {
+  shareBtn.textContent = label;
+  setTimeout(() => { shareBtn.textContent = 'Share'; }, 1800);
+};
+shareBtn.addEventListener('click', async () => {
+  const s = lastStats ?? { score: runScore(), coins: run.coins, survived: Math.floor(run.t) };
+  const text = `I scored ${s.score.toLocaleString()} in Coconut Dodge`
+    + ` (${s.coins} coins, ${formatTime(s.survived)}). Can you beat that?`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'Coconut Dodge', text, url: GAME_URL });
+      return;
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text} ${GAME_URL}`);
+    shareCaption('Copied!');
+  } catch {
+    shareCaption('Copy failed');
+  }
+});
+
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) pause();
-  else maybeRefreshPlayer();
+  if (document.hidden) {
+    pause();
+    stopMusic();
+  } else {
+    startMusic();
+    maybeRefreshPlayer();
+  }
 });
 addEventListener('focus', maybeRefreshPlayer);
 addEventListener('resize', resize);
@@ -989,6 +1122,8 @@ addEventListener('resize', resize);
 
 resize();
 syncMute();
+syncMusicBtn();
+syncFs();
 updateHud(true);
 showMenuBest();
 showPanel('menu');

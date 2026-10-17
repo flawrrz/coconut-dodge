@@ -1,6 +1,8 @@
 const MUTE_KEY = 'coconut-dodge:muted';
+const MUSIC_KEY = 'coconut-dodge:music';
 let ac = null;
 let muted = localStorage.getItem(MUTE_KEY) === '1';
+let musicOn = localStorage.getItem(MUSIC_KEY) !== '0';
 
 export function unlockAudio() {
   if (!ac) {
@@ -19,8 +21,18 @@ export function setMuted(value) {
   localStorage.setItem(MUTE_KEY, value ? '1' : '0');
 }
 
-function tone(freq, dur, { type = 'sine', vol = 0.2, slide = 0, delay = 0 } = {}) {
-  if (!ac || muted) return;
+export function isMusicOn() {
+  return musicOn;
+}
+
+export function setMusicOn(value) {
+  musicOn = value;
+  localStorage.setItem(MUSIC_KEY, value ? '1' : '0');
+  if (!value) stopMusic();
+}
+
+function tone(freq, dur, { type = 'sine', vol = 0.2, slide = 0, delay = 0, music = false } = {}) {
+  if (!ac || (music ? false : muted)) return;
   const t0 = ac.currentTime + delay;
   const osc = ac.createOscillator();
   const gain = ac.createGain();
@@ -34,6 +46,51 @@ function tone(freq, dur, { type = 'sine', vol = 0.2, slide = 0, delay = 0 } = {}
   osc.start(t0);
   osc.stop(t0 + dur + 0.02);
 }
+
+// ---------- background music ----------
+// A four-bar loop: bass on the beat, a quiet offbeat pluck on top. Scheduled with a
+// lookahead so the timing comes from the audio clock rather than timers.
+const BEAT = 60 / 104;
+const EIGHTH = BEAT / 2;
+const BARS = [
+  { bass: 131, pluck: [523, 659, 784, 659] },
+  { bass: 196, pluck: [587, 784, 988, 784] },
+  { bass: 165, pluck: [659, 784, 988, 784] },
+  { bass: 147, pluck: [587, 698, 880, 698] },
+];
+let musicTimer = null;
+let musicAt = 0;
+let musicStep = 0;
+
+function scheduleMusic() {
+  if (!ac || !musicOn) return;
+  const horizon = ac.currentTime + 0.7;
+  while (musicAt < horizon) {
+    const delay = Math.max(0, musicAt - ac.currentTime);
+    const bar = BARS[Math.floor(musicStep / 8) % 4];
+    const i = musicStep % 8;
+    if (i % 2 === 0) {
+      tone(bar.bass, EIGHTH * 1.7, { type: 'triangle', vol: 0.05, delay, music: true });
+    }
+    tone(bar.pluck[i >> 1], EIGHTH * 0.55, { type: 'sine', vol: 0.022, delay: delay + EIGHTH * 0.5, music: true });
+    musicStep += 1;
+    musicAt += EIGHTH;
+  }
+}
+
+export function startMusic() {
+  if (!ac || !musicOn || musicTimer) return;
+  musicStep = 0;
+  musicAt = ac.currentTime + 0.15;
+  scheduleMusic();
+  musicTimer = setInterval(scheduleMusic, 250);
+}
+
+export function stopMusic() {
+  if (musicTimer) clearInterval(musicTimer);
+  musicTimer = null;
+}
+
 
 export const sfx = {
   start() {
@@ -80,6 +137,10 @@ export const sfx = {
   },
   near() {
     tone(1600, 0.06, { type: 'sine', vol: 0.035, slide: 1.3 });
+  },
+  best() {
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, { type: 'square', vol: 0.07, delay: i * 0.08 }));
+    tone(1568, 0.4, { type: 'triangle', vol: 0.09, delay: 0.34 });
   },
   over() {
     [392, 330, 262, 196].forEach((f, i) => tone(f, 0.22, { type: 'triangle', vol: 0.15, delay: i * 0.14 }));

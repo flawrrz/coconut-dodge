@@ -24,7 +24,14 @@
     <div class="hud-right">
       <div class="chip" id="hud-lives" aria-label="Lives"></div>
       <div class="chip"><i class="coin-icon"></i><span id="hud-coins">0</span><b class="chain" id="hud-chain" hidden></b></div>
-      <div class="chip score"><span id="hud-score">0</span></div>
+      <div class="chip score" id="score-chip"><span id="hud-score">0</span></div>
+      <button class="icon-btn" id="fullscreen-btn" type="button" aria-label="Full screen" hidden>
+        <svg viewBox="0 0 24 24"><path id="fs-enter" d="M4 9V4h5v2H6v3zm11-5h5v5h-2V6h-3zM4 15h2v3h3v2H4zm14 0h2v5h-5v-2h3z"/></svg>
+        <svg viewBox="0 0 24 24"><path id="fs-exit" d="M9 4h2v5H4V9h5zm4 0h2v5v-2h5V4h-2zm-8 11h5v5H9v-2H4v-3zm7 0h5v3h-5v2h-2v-5z"/></svg>
+      </button>
+      <button class="icon-btn" id="music-btn" type="button" aria-label="Turn music off">
+        <svg viewBox="0 0 24 24"><path d="M9 18.5a3 3 0 1 1-2-2.83V5l11-2v11.5a3 3 0 1 1-2-2.83V7.24L9 8.9z"/><path id="music-cross" d="M3.5 3.5l17 17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      </button>
       <button class="icon-btn" id="pause-btn" type="button" aria-label="Pause" hidden>
         <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
       </button>
@@ -47,26 +54,32 @@
 
   <main class="panels">
     <section class="panel" id="menu">
-      <h1>Coconut <span>Dodge</span></h1>
-      <p class="tagline">The palms are dropping coconuts. Dodge them, catch the naira, and survive as long as you can.</p>
-      <ul class="howto">
-        <li><kbd>&larr;</kbd><kbd>&rarr;</kbd> <kbd>A</kbd><kbd>D</kbd> or drag to move</li>
-        <li>3 bonks and you're out. Hearts heal.</li>
-        <li>Chain coins for x2 and x3. Near misses and gold pay.</li>
-        <li class="powers-legend">
-          <span class="pu shield"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z"/></svg></span>Shield
-          <span class="pu magnet"><svg viewBox="0 0 24 24"><path d="M5 4h5v9a2 2 0 0 0 4 0V4h5v9a7 7 0 0 1-14 0z"/></svg></span>Magnet
-          <span class="pu slow"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5v4.6l3.5 2.1-1 1.7L11 12.7V7z"/></svg></span>Slow-mo
-        </li>
-      </ul>
-      <button class="btn primary" id="play-btn" type="button">Play</button>
-      <div class="signin-prompt" id="menu-signin" hidden>
-        <span>Sign in with start.ng to put your runs on the leaderboard.</span>
-        <button class="btn" id="menu-signin-btn" type="button">Sign in</button>
+      <div id="menu-play">
+        <h1>Coconut <span>Dodge</span></h1>
+        <p class="tagline">The palms are dropping coconuts. Dodge them, catch the naira, and survive as long as you can.</p>
+        <ul class="howto">
+          <li><kbd>&larr;</kbd><kbd>&rarr;</kbd> <kbd>A</kbd><kbd>D</kbd> or drag to move</li>
+          <li>3 bonks and you're out. Hearts heal.</li>
+          <li>Chain coins for x2 and x3. Near misses and gold pay.</li>
+          <li class="powers-legend">
+            <span class="pu shield"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z"/></svg></span>Shield
+            <span class="pu magnet"><svg viewBox="0 0 24 24"><path d="M5 4h5v9a2 2 0 0 0 4 0V4h5v9a7 7 0 0 1-14 0z"/></svg></span>Magnet
+            <span class="pu slow"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5v4.6l3.5 2.1-1 1.7L11 12.7V7z"/></svg></span>Slow-mo
+          </li>
+        </ul>
+        <button class="btn primary" id="play-btn" type="button">Play</button>
+        <div class="signin-prompt" id="menu-signin" hidden>
+          <span>Sign in with start.ng to put your runs on the leaderboard.</span>
+          <button class="btn" id="menu-signin-btn" type="button">Sign in</button>
+        </div>
+        <p class="best" id="menu-best" hidden></p>
+        <button class="btn" id="menu-board-btn" type="button">Leaderboard</button>
       </div>
-      <p class="best" id="menu-best" hidden></p>
-      <h2>Leaderboard</h2>
-      <ol class="board" id="menu-board"></ol>
+      <div id="menu-board-view" hidden>
+        <h2 class="over-title">Leaderboard</h2>
+        <ol class="board" id="menu-board"></ol>
+        <button class="btn" id="menu-back-btn" type="button">Back</button>
+      </div>
     </section>
 
     <section class="panel" id="over" hidden>
@@ -79,6 +92,10 @@
       <p class="save-msg" id="save-msg"></p>
       <button class="btn" id="over-signin" type="button" hidden>Sign in with start.ng</button>
       <button class="btn primary" id="again-btn" type="button">Play again</button>
+      <div class="btn-row">
+        <button class="btn" id="share-btn" type="button">Share</button>
+        <button class="btn" id="menu-btn" type="button">Menu</button>
+      </div>
       <h2>Leaderboard</h2>
       <ol class="board" id="over-board"></ol>
     </section>
@@ -88,6 +105,8 @@
       <button class="btn primary" id="resume-btn" type="button">Resume</button>
     </section>
   </main>
+
+  <p class="sr-only" id="announce" role="status" aria-live="polite"></p>
 
   <script type="module" src="./game.js"></script>
 </body>
