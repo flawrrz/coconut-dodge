@@ -222,29 +222,62 @@ export class Backdrop {
   }
 }
 
-export function drawCoconut(ctx, x, y, r, rot) {
+export function drawCoconut(ctx, x, y, r, rot, kind = 'plain', t = 0) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rot);
   const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r);
-  g.addColorStop(0, '#b07a42');
-  g.addColorStop(1, '#5b3716');
+  if (kind === 'golden') {
+    g.addColorStop(0, '#fff2a8');
+    g.addColorStop(1, '#c08a10');
+  } else if (kind === 'split') {
+    g.addColorStop(0, '#8d5a2b');
+    g.addColorStop(1, '#3a2109');
+  } else {
+    g.addColorStop(0, '#b07a42');
+    g.addColorStop(1, '#5b3716');
+  }
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(0, 0, r, 0, TAU);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(40,20,5,0.35)';
+  ctx.strokeStyle = kind === 'golden' ? 'rgba(150,100,0,0.3)' : 'rgba(40,20,5,0.35)';
   ctx.lineWidth = r * 0.08;
   for (const a of [0.4, 1.6, 2.7, 4.1, 5.3]) {
     ctx.beginPath();
     ctx.arc(0, 0, r * 0.75, a, a + 0.5);
     ctx.stroke();
   }
-  ctx.fillStyle = '#2e1a09';
+  ctx.fillStyle = kind === 'golden' ? '#8a5a00' : '#2e1a09';
   for (const [ex, ey] of [[-0.25, -0.2], [0.25, -0.2], [0, 0.17]]) {
     ctx.beginPath();
     ctx.arc(ex * r, ey * r, r * 0.13, 0, TAU);
     ctx.fill();
+  }
+  if (kind === 'split') {
+    ctx.strokeStyle = 'rgba(255,212,59,0.95)';
+    ctx.lineWidth = r * 0.16;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.1, -r * 0.92);
+    ctx.lineTo(r * 0.28, -r * 0.34);
+    ctx.lineTo(-r * 0.24, r * 0.2);
+    ctx.lineTo(r * 0.12, r * 0.9);
+    ctx.stroke();
+  }
+  if (kind === 'golden') {
+    const k = 0.5 + 0.5 * Math.sin(t * 5);
+    ctx.fillStyle = `rgba(255,255,255,${0.45 + 0.5 * k})`;
+    for (const [sx, sy, sc] of [[-r * 0.55, -r * 0.5, 1], [r * 0.5, r * 0.45, 0.7]]) {
+      const s = r * 0.26 * sc * (0.7 + 0.5 * k);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - s);
+      ctx.quadraticCurveTo(sx, sy, sx + s, sy);
+      ctx.quadraticCurveTo(sx, sy, sx, sy + s);
+      ctx.quadraticCurveTo(sx, sy, sx - s, sy);
+      ctx.quadraticCurveTo(sx, sy, sx, sy - s);
+      ctx.fill();
+    }
   }
   ctx.restore();
 }

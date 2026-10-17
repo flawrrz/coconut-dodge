@@ -11,6 +11,9 @@ const ctx = canvas.getContext('2d');
 const BEST_KEY = 'coconut-dodge:best';
 const MAX_LIVES = 3;
 const COIN_POINTS = 50;
+const NEAR_MISS_POINTS = 25;
+const GOLD_POINTS = 200;
+const CHAIN_WINDOW = 2.5;
 const POWERS = {
   shield: { label: 'Shield!', duration: 7 },
   magnet: { label: 'Magnet!', duration: 9 },
@@ -25,6 +28,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const approach = (v, target, step) => (v < target ? Math.min(target, v + step) : Math.max(target, v - step));
 const rand = (a, b) => a + Math.random() * (b - a);
 const formatTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+// Difficulty keeps climbing past the first 100s, just more slowly, and settles at 200.
+const ramp = (t) => Math.min(200, t <= 100 ? t : 100 + (t - 100) * 0.4);
+const chainMult = (chain) => (chain >= 6 ? 3 : chain >= 3 ? 2 : 1);
 
 const view = { W: 0, H: 0, dpr: 1, u: 1, groundY: 0, x0: 0, x1: 0 };
 let backdrop = null;
@@ -41,15 +47,17 @@ let run = newRun();
 
 function newRun() {
   return {
-    t: 0, coins: 0, lives: MAX_LIVES,
-    items: [], particles: [], popups: [],
-    spawnT: 1.1, coinT: 1.8, heartT: rand(16, 24), powerT: rand(7, 10),
+    t: 0, scoreT: 0, coinScore: 0, bonus: 0, coins: 0, lives: MAX_LIVES,
+    chain: 0, chainT: 0,
+    items: [], particles: [], popups: [], markers: [],
+    spawnT: 1.1, coinT: 1.8, heartT: rand(16, 24), powerT: rand(7, 10), burstT: rand(12, 18),
+    warn: null,
     power: { shield: 0, magnet: 0, slow: 0 },
     shake: 0, dyingT: 0,
   };
 }
 
-const runScore = () => Math.floor(run.t * 10) + run.coins * COIN_POINTS;
+const runScore = () => Math.floor(run.scoreT * 10) + run.coinScore + run.bonus;
 
 // ---------- layout ----------
 
@@ -94,6 +102,8 @@ function rescaleRun(prev) {
     p.y *= fy;
   }
   run.particles = [];
+  run.markers = [];
+  if (run.warn) run.warn.x = mapX(run.warn.x);
   player.vx *= k;
 }
 
@@ -272,6 +282,8 @@ function endRun() {
   state = 'over';
   held.clear();
   pointer.active = false;
+  run.warn = null;
+  run.markers = [];
   const stats = { score: runScore(), coins: run.coins, survived: Math.floor(run.t) };
   $('res-score').textContent = stats.score.toLocaleString();
   $('res-coins').textContent = String(stats.coins);
@@ -292,17 +304,73 @@ function showMenuBest() {
 
 // ---------- spawning ----------
 
-function spawnCoconut() {
+function pickVariant() {
+  if (run.t < 25) return 'plain';
+  const roll = Math.random();
+  if (roll < 0.07) return 'split';
+  if (roll < 0.12) return 'golden';
+  return 'plain';
+}
+
+// True when a coconut landing at x would leave the player no room to stand.
+function wouldSealField(x, r) {
+  const { u, x0, x1, groundY } = view;
+  const need = 30 * u;
+  const spans = run.items
+    .filter((it) => it.kind === 'coconut' && it.y > groundY * 0.45)
+    .map((it) => [it.x - it.r, it.x + it.r])
+    .concat([[x - r, x + r]])
+    .sort((a, b) => a[0] - b[0]);
+  let reach = x0;
+  for (const [a, b] of spans) {
+    if (a - reach > need) return false;
+    reach = Math.max(reach, b);
+    if (reach >= x1 - need) return true;
+  }
+  return false;
+}
+
+function spawnCoconut(opts = {}) {
   const { u, x0, x1 } = view;
-  const e = run.t;
-  const r = rand(14, 19) * u;
-  const aimed = Math.random() < 0.32;
-  const x = aimed ? player.x + rand(-70, 70) * u : rand(x0 + r, x1 - r);
+  const variant = opts.variant ?? pickVariant();
+  const r = rand(14, 19) * u * (variant === 'split' ? 1.18 : 1);
+  const aimed = opts.x === undefined && Math.random() < 0.32;
+  const want = opts.x ?? (aimed ? player.x + rand(-70, 70) * u : rand(x0 + r, x1 - r));
+  const x = clamp(want, x0 + r, x1 - r);
+  if (wouldSealField(x, r)) return;
   run.items.push({
-    kind: 'coconut', x: clamp(x, x0 + r, x1 - r), y: -r - rand(0, 30) * u, r,
-    vy: rand(0, 60) * u, g: (620 + Math.min(e, 100) * 9) * u,
-    rot: rand(0, 6), vr: rand(-4, 4),
+    kind: 'coconut', variant, x, y: -r - rand(0, 30) * u, r,
+    vx: 0, vy: rand(0, 60) * u, g: (620 + ramp(run.t) * 9) * u,
+    rot: rand(0, 6), vr: rand(-4, 4), born: clock,
   });
+  if (aimed) run.markers.push({ x, life: 0.9 });
+}
+
+function startBurst() {
+  const { u, x0, x1 } = view;
+  const x = clamp(player.x + rand(-180, 180) * u, x0 + 70 * u, x1 - 70 * u);
+  run.warn = { x, t: 0.95, count: ramp(run.t) > 140 ? 4 : 3 };
+  leaves(x, 30 * u, 10);
+  sfx.rustle();
+}
+
+function dropBurst(warn) {
+  for (let i = 0; i < warn.count; i++) {
+    spawnCoconut({ x: warn.x + rand(-75, 75) * view.u, variant: 'plain' });
+  }
+}
+
+function splitCoconut(it, sink) {
+  const { u } = view;
+  burst(it.x, it.y, ['#6b4219', '#8a5a2e', '#ffd43b'], 10, 260);
+  sfx.split();
+  for (const dir of [-1, 1]) {
+    sink.push({
+      kind: 'coconut', variant: 'plain', x: it.x + dir * it.r * 0.6, y: it.y, r: it.r * 0.72,
+      vx: dir * rand(150, 230) * u, vy: it.vy * 0.55, g: it.g,
+      rot: rand(0, 6), vr: dir * 6, born: clock,
+    });
+  }
 }
 
 function spawnPickup(kind, type) {
@@ -343,6 +411,28 @@ function popup(x, y, text, color) {
   run.popups.push({ x, y, text, color, life: 0.9 });
 }
 
+let lastBlock = -1;
+
+function blocked(x, y) {
+  sfx.block();
+  if (clock - lastBlock < 0.4) return;
+  lastBlock = clock;
+  popup(x, y, 'Blocked!', '#a5d8ff');
+}
+
+function leaves(x, y, count) {
+  const { u } = view;
+  const greens = ['#3f9142', '#57c84d', '#2b7a3b'];
+  for (let i = 0; i < count; i++) {
+    run.particles.push({
+      x: x + rand(-32, 32) * u, y: y + rand(-8, 8) * u,
+      vx: rand(-70, 70) * u, vy: rand(10, 70) * u,
+      life: rand(0.7, 1.3), max: 1.3, size: rand(5, 9) * u,
+      color: greens[i % 3], rot: rand(0, 6), vr: rand(-5, 5),
+    });
+  }
+}
+
 function overlapsPlayer(it, halfW, height, forgive) {
   const { u, groundY } = view;
   const cx = clamp(it.x, player.x - halfW * u, player.x + halfW * u);
@@ -355,6 +445,8 @@ function overlapsPlayer(it, halfW, height, forgive) {
 function getHit() {
   run.lives -= 1;
   run.shake = 0.35;
+  run.chain = 0;
+  run.chainT = 0;
   player.hurtT = 0.5;
   player.invuln = 1.6;
   sfx.bonk();
@@ -404,6 +496,11 @@ function update(dt) {
 
   if (state === 'play') {
     run.t += dt;
+    run.scoreT += dt * slow;
+    if (run.chainT > 0) {
+      run.chainT -= dt;
+      if (run.chainT <= 0) run.chain = 0;
+    }
     for (const p of Object.keys(POWERS)) {
       if (run.power[p] <= 0) continue;
       run.power[p] = Math.max(0, run.power[p] - dt);
@@ -412,8 +509,21 @@ function update(dt) {
     run.spawnT -= dt * slow;
     if (run.spawnT <= 0) {
       spawnCoconut();
-      if (Math.random() < Math.min(0.35, run.t * 0.004)) spawnCoconut();
-      run.spawnT = Math.max(0.26, 0.9 - run.t * 0.009) * rand(0.75, 1.25);
+      if (Math.random() < Math.min(0.55, ramp(run.t) * 0.004)) spawnCoconut();
+      run.spawnT = Math.max(0.16, 0.9 - ramp(run.t) * 0.009) * rand(0.75, 1.25);
+    }
+    if (run.warn) {
+      run.warn.t -= dt;
+      if (run.warn.t <= 0) {
+        dropBurst(run.warn);
+        run.warn = null;
+      }
+    } else if (run.t > 20) {
+      run.burstT -= dt * slow;
+      if (run.burstT <= 0) {
+        startBurst();
+        run.burstT = rand(9, 14);
+      }
     }
     run.coinT -= dt;
     if (run.coinT <= 0) {
@@ -442,6 +552,7 @@ function update(dt) {
   const shield = live && run.power.shield > 0 ? shieldCenter() : null;
   const magnet = live && run.power.magnet > 0;
   const pull = { x: player.x, y: groundY - 50 * u };
+  const spawned = [];
   run.items = run.items.filter((it) => {
     const k = it.kind === 'coconut' ? slow : 1;
     it.vy += it.g * dt * k;
@@ -449,10 +560,23 @@ function update(dt) {
     it.rot += it.vr * dt * k;
     it.pulled = false;
     if (it.kind === 'coconut') {
+      if (it.vx) {
+        it.x += it.vx * dt * k;
+        if (it.x < view.x0 + it.r) {
+          it.x = view.x0 + it.r;
+          it.vx = Math.abs(it.vx);
+        } else if (it.x > view.x1 - it.r) {
+          it.x = view.x1 - it.r;
+          it.vx = -Math.abs(it.vx);
+        }
+      }
       if (shield && Math.hypot(it.x - shield.x, it.y - shield.y) < SHIELD_R * u + it.r) {
         burst(it.x, it.y, ['#a5d8ff', '#ffffff', '#8a5a2e'], 10, 300);
-        popup(it.x, it.y, 'Blocked!', '#a5d8ff');
-        sfx.block();
+        blocked(it.x, it.y);
+        return false;
+      }
+      if (it.variant === 'split' && it.y > groundY * 0.52) {
+        splitCoconut(it, spawned);
         return false;
       }
       if (live && player.invuln <= 0 && overlapsPlayer(it, 13, 84, 0.85)) {
@@ -460,14 +584,30 @@ function update(dt) {
         getHit();
         return false;
       }
+      if (live && !it.near && it.y > groundY - 100 * u) {
+        const d = Math.abs(it.x - player.x);
+        if (d > it.r + 13 * u && d < it.r + 34 * u) {
+          it.near = true;
+          run.bonus += NEAR_MISS_POINTS;
+          popup(it.x, it.y, 'Close!', '#fffefa');
+          sfx.near();
+        }
+      }
       if (it.y + it.r * 0.6 >= groundY) {
-        burst(it.x, groundY, ['#6b4219', '#8a5a2e', '#f4f1e8', '#e8c27a'], 7, 220);
-        if (live) sfx.thud();
+        if (it.variant === 'golden' && live) {
+          run.bonus += GOLD_POINTS;
+          popup(it.x, groundY - 26 * u, `+${GOLD_POINTS} Dodged!`, '#ffd43b');
+          burst(it.x, groundY, ['#ffd43b', '#fff3a3', '#ffffff'], 12, 260);
+          sfx.gold();
+        } else {
+          burst(it.x, groundY, ['#6b4219', '#8a5a2e', '#f4f1e8', '#e8c27a'], 7, 220);
+          if (live) sfx.thud();
+        }
         return false;
       }
       return true;
     }
-    if (magnet && it.kind === 'coin') {
+    if (magnet) {
       const dx = pull.x - it.x;
       const dy = pull.y - it.y;
       if (Math.hypot(dx, dy) < MAGNET_RANGE * u) {
@@ -479,12 +619,18 @@ function update(dt) {
     if (live && overlapsPlayer(it, 20, 96, 1)) {
       if (it.kind === 'coin') {
         run.coins += 1;
-        popup(it.x, it.y, `+${COIN_POINTS}`, '#ffd43b');
+        run.chain += 1;
+        run.chainT = CHAIN_WINDOW;
+        const mult = chainMult(run.chain);
+        const value = COIN_POINTS * mult;
+        run.coinScore += value;
+        popup(it.x, it.y, mult > 1 ? `+${value}  x${mult}` : `+${value}`, '#ffd43b');
         burst(it.x, it.y, ['#ffd43b', '#fff3a3'], 6, 160);
-        sfx.coin();
+        sfx.coin(mult - 1);
       } else if (it.kind === 'power') {
-        run.power[it.type] = POWERS[it.type].duration;
-        popup(it.x, it.y, POWERS[it.type].label, POWER_COLORS[it.type]);
+        const { duration, label } = POWERS[it.type];
+        run.power[it.type] = Math.min(duration * 1.8, run.power[it.type] + duration * 0.6);
+        popup(it.x, it.y, label, POWER_COLORS[it.type]);
         burst(it.x, it.y, [POWER_COLORS[it.type], '#ffffff'], 12, 220);
         sfx.power();
       } else {
@@ -498,6 +644,7 @@ function update(dt) {
     if (it.y - it.r > groundY) return false;
     return true;
   });
+  if (spawned.length) run.items.push(...spawned);
 
   run.particles = run.particles.filter((p) => {
     p.life -= dt;
@@ -512,16 +659,25 @@ function update(dt) {
     p.y -= 50 * u * dt;
     return p.life > 0;
   });
+  run.markers = run.markers.filter((m) => (m.life -= dt) > 0);
 
   updateHud();
 }
 
-const hud = { score: -1, coins: -1, lives: -1, powers: {} };
+const hud = { score: -1, coins: -1, lives: -1, chain: '', powers: {} };
 
 function updateHud(force = false) {
   const score = runScore();
   if (force || score !== hud.score) $('hud-score').textContent = (hud.score = score).toLocaleString();
   if (force || run.coins !== hud.coins) $('hud-coins').textContent = String((hud.coins = run.coins));
+  const chain = chainMult(run.chainT > 0 ? run.chain : 0);
+  const chainKey = chain > 1 ? `x${chain}` : '';
+  if (force || chainKey !== hud.chain) {
+    hud.chain = chainKey;
+    const el = $('hud-chain');
+    el.hidden = !chainKey;
+    el.textContent = chainKey;
+  }
   if (force || run.lives !== hud.lives) {
     hud.lives = run.lives;
     $('hud-lives').innerHTML = Array.from({ length: MAX_LIVES }, (_, i) =>
@@ -529,14 +685,15 @@ function updateHud(force = false) {
   }
   for (const [p, { duration }] of Object.entries(POWERS)) {
     const left = run.power[p];
-    const key = left > 0 ? `${Math.ceil(left)}:${Math.round((left / duration) * 50)}:${left < 1.5}` : '';
+    const frac = Math.min(1, left / duration);
+    const key = left > 0 ? `${Math.ceil(left)}:${Math.round(frac * 50)}:${left < 1.5}` : '';
     if (!force && hud.powers[p] === key) continue;
     hud.powers[p] = key;
     const chip = $(`power-${p}`);
     chip.hidden = !key;
     if (!key) continue;
     chip.querySelector('span').textContent = String(Math.ceil(left));
-    chip.style.setProperty('--left', String(left / duration));
+    chip.style.setProperty('--left', String(frac));
     chip.classList.toggle('ending', left < 1.5);
   }
 }
@@ -557,6 +714,41 @@ function drawNameTag(x, y, text) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y - h / 2);
+}
+
+function drawTopWarnings(u) {
+  // Fixed CSS px so the telegraphs clear the HUD chips, which don't scale with u.
+  const y = 62;
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const m of run.markers) {
+    ctx.globalAlpha = clamp(m.life / 0.9, 0, 1) * 0.95;
+    ctx.strokeStyle = '#ffd43b';
+    ctx.lineWidth = 3.5 * u;
+    ctx.beginPath();
+    ctx.moveTo(m.x - 9 * u, y - 8 * u);
+    ctx.lineTo(m.x, y + 3 * u);
+    ctx.lineTo(m.x + 9 * u, y - 8 * u);
+    ctx.stroke();
+  }
+  if (run.warn) {
+    const pulse = 0.5 + 0.5 * Math.sin(clock * 13);
+    const cy = y + 12 * u;
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = `rgba(255,107,107,${0.35 + 0.35 * pulse})`;
+    ctx.lineWidth = 2.5 * u;
+    ctx.setLineDash([7 * u, 9 * u]);
+    ctx.beginPath();
+    ctx.moveTo(run.warn.x, cy + 16 * u);
+    ctx.lineTo(run.warn.x, view.groundY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(run.warn.x, cy, (15 + 4 * pulse) * u, 0, Math.PI * 2);
+    ctx.stroke();
+    drawCoconut(ctx, run.warn.x, cy, 8.5 * u, clock * 2);
+  }
+  ctx.restore();
 }
 
 function render() {
@@ -582,11 +774,15 @@ function render() {
     if (it.kind !== 'coconut') continue;
     const k = clamp(1 - (groundY - it.y) / groundY, 0, 1);
     const s = 0.45 + 0.7 * k;
-    ctx.fillStyle = `rgba(70,35,10,${0.1 + 0.3 * k})`;
+    ctx.fillStyle = it.variant === 'golden'
+      ? `rgba(180,130,10,${0.12 + 0.34 * k})`
+      : `rgba(70,35,10,${0.1 + 0.3 * k})`;
     ctx.beginPath();
     ctx.ellipse(it.x, groundY + 3 * u, it.r * s, it.r * 0.3 * s, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  drawTopWarnings(u);
 
   const flicker = player.invuln > 0 && state === 'play' && Math.floor(player.invuln * 12) % 2 === 0;
   drawCharacter(ctx, who.style, {
@@ -649,7 +845,7 @@ function render() {
   }
 
   for (const it of run.items) {
-    if (it.kind === 'coconut') drawCoconut(ctx, it.x, it.y, it.r, it.rot);
+    if (it.kind === 'coconut') drawCoconut(ctx, it.x, it.y, it.r, it.rot, it.variant, clock - it.born);
     else if (it.kind === 'coin') drawCoin(ctx, it.x, it.y, it.r, clock - it.born);
     else if (it.kind === 'power') drawPowerUp(ctx, it.x, it.y, it.r, it.type, clock - it.born);
     else drawHeart(ctx, it.x, it.y, it.r);

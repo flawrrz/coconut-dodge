@@ -23,7 +23,7 @@
     </div>
     <div class="hud-right">
       <div class="chip" id="hud-lives" aria-label="Lives"></div>
-      <div class="chip"><i class="coin-icon"></i><span id="hud-coins">0</span></div>
+      <div class="chip"><i class="coin-icon"></i><span id="hud-coins">0</span><b class="chain" id="hud-chain" hidden></b></div>
       <div class="chip score"><span id="hud-score">0</span></div>
       <button class="icon-btn" id="pause-btn" type="button" aria-label="Pause" hidden>
         <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
@@ -36,7 +36,7 @@
       <div class="chip power shield" id="power-shield" hidden title="Shield: coconuts bounce off">
         <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z"/></svg><span></span>
       </div>
-      <div class="chip power magnet" id="power-magnet" hidden title="Magnet: pulls coins to you">
+      <div class="chip power magnet" id="power-magnet" hidden title="Magnet: pulls coins, hearts and power-ups to you">
         <svg viewBox="0 0 24 24"><path d="M5 4h5v9a2 2 0 0 0 4 0V4h5v9a7 7 0 0 1-14 0z"/></svg><span></span>
       </div>
       <div class="chip power slow" id="power-slow" hidden title="Slow-mo: coconuts fall slower">
@@ -52,6 +52,7 @@
       <ul class="howto">
         <li><kbd>&larr;</kbd><kbd>&rarr;</kbd> <kbd>A</kbd><kbd>D</kbd> or drag to move</li>
         <li>3 bonks and you're out. Hearts heal.</li>
+        <li>Chain coins for x2 and x3. Near misses and gold pay.</li>
         <li class="powers-legend">
           <span class="pu shield"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z"/></svg></span>Shield
           <span class="pu magnet"><svg viewBox="0 0 24 24"><path d="M5 4h5v9a2 2 0 0 0 4 0V4h5v9a7 7 0 0 1-14 0z"/></svg></span>Magnet

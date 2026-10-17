@@ -166,6 +166,14 @@ html, body {
   background: radial-gradient(circle at 35% 35%, #fff3a3, #ffd43b 55%, #e0a100);
   box-shadow: inset 0 0 0 2px #c47f00;
 }
+.chain {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sun);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+}
 .icon-btn {
   width: 40px;
   height: 40px;
