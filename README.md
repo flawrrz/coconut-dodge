@@ -13,7 +13,8 @@ Play it at **https://coconut-dodge.start.ng**.
 
 ## What's in a run
 
-- **Coconuts** fall faster and more often the longer you last. Golden ones pay 200 if you let them land; splitting ones break into two mid-air.
+- **Coconuts** fall faster and more often the longer you last. Splitting ones break into two mid-air.
+- **Golden coconuts** only ever come from aimed drops, so the 200 points mean you actually moved out of the way.
 - **Palm bursts**: a rustle and a red marker, then a cluster of coconuts in that column. Yellow chevrons mark aimed drops.
 - **Coins** chain: 3 in a row within 2.5 seconds pays x2, 6 pays x3. A bonk breaks the chain.
 - **Near misses** pay 25, and dodging anything scores over time.

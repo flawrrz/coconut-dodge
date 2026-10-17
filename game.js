@@ -53,6 +53,8 @@ const held = new Map();
 const pointer = { active: false, down: false, x: 0, grabX: 0, anchor: 0, relative: false };
 let run = newRun();
 let lastStats = null;
+// Full screen changes the viewport, and only because the player asked for it.
+let fsGrace = 0;
 
 function newRun() {
   return {
@@ -91,7 +93,7 @@ function resize() {
   if (!prev.W) return;
   rescaleRun(prev);
   // A width change is a rotation or window resize, so pause; height-only changes are usually the phone's address bar.
-  if (W !== prev.W) pause();
+  if (W !== prev.W && performance.now() >= fsGrace) pause();
 }
 
 function rescaleRun(prev) {
@@ -345,11 +347,12 @@ function showMenuBest() {
 
 // ---------- spawning ----------
 
-function pickVariant() {
+// Gold only rides on coconuts the palm aims at you, so the bonus has to be earned by moving.
+function pickVariant(aimed) {
   if (run.t < 25) return 'plain';
   const roll = Math.random();
   if (roll < 0.07) return 'split';
-  if (roll < 0.12) return 'golden';
+  if (aimed && roll < 0.21) return 'golden';
   return 'plain';
 }
 
@@ -373,9 +376,9 @@ function wouldSealField(x, r) {
 
 function spawnCoconut(opts = {}) {
   const { u, x0, x1 } = view;
-  const variant = opts.variant ?? pickVariant();
-  const r = rand(14, 19) * u * (variant === 'split' ? 1.18 : 1);
   const aimed = opts.x === undefined && Math.random() < 0.32;
+  const variant = opts.variant ?? pickVariant(aimed);
+  const r = rand(14, 19) * u * (variant === 'split' ? 1.18 : 1);
   const want = opts.x ?? (aimed ? player.x + rand(-70, 70) * u : rand(x0 + r, x1 - r));
   const x = clamp(want, x0 + r, x1 - r);
   if (wouldSealField(x, r)) return;
@@ -1065,18 +1068,27 @@ const syncFs = () => {
   fsBtn.classList.toggle('expanded', on);
   fsBtn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
 };
+function onFsChange() {
+  syncFs();
+  fsGrace = performance.now() + 300;
+}
 fsBtn.hidden = !(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
 fsBtn.addEventListener('click', () => {
-  if (fsElement()) {
-    const exit = document.exitFullscreen || document.webkitExitFullscreen;
-    exit?.call(document)?.catch?.(() => {});
-  } else {
-    const enter = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
-    enter?.call(document.documentElement)?.catch?.(() => {});
-  }
+  const on = !fsElement();
+  const call = on
+    ? (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)?.call(document.documentElement)
+    : (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+  fsGrace = performance.now() + 900;
+  // A rejection usually means the page is framed without allow="fullscreen", so say so instead of dying quietly.
+  Promise.resolve(call).catch(() => {
+    fsGrace = 0;
+    fsBtn.classList.add('denied');
+    announce('Full screen is not available here.');
+    setTimeout(() => fsBtn.classList.remove('denied'), 1600);
+  });
 });
-addEventListener('fullscreenchange', syncFs);
-addEventListener('webkitfullscreenchange', syncFs);
+addEventListener('fullscreenchange', onFsChange);
+addEventListener('webkitfullscreenchange', onFsChange);
 
 // ---------- share ----------
 

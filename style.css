@@ -221,6 +221,7 @@ html, body {
 .icon-btn:not(.music-off) #music-cross { display: none; }
 .icon-btn.expanded #fs-enter { display: none; }
 .icon-btn:not(.expanded) #fs-exit { display: none; }
+.icon-btn.denied { color: var(--heart); box-shadow: 0 0 0 3px rgba(255, 77, 109, .7); }
 
 .sr-only {
   position: absolute;
