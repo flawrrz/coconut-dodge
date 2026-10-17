@@ -30,10 +30,12 @@ const view = { W: 0, H: 0, dpr: 1, u: 1, groundY: 0, x0: 0, x1: 0 };
 let backdrop = null;
 let state = 'menu';
 let clock = 0;
+let countT = 0;
+const COUNTDOWN = 3;
 
 const who = { user: null, name: 'Guest', account: '', face: null, style: normalizeStyle(GUEST_STYLE) };
 const player = { x: 0, vx: 0, facing: 1, phase: 0, moving: 0, invuln: 0, hurtT: 0, blinkT: 2, fallen: 0 };
-const keys = new Set();
+const held = new Map();
 const pointer = { active: false, down: false, x: 0 };
 let run = newRun();
 
@@ -52,7 +54,7 @@ const runScore = () => Math.floor(run.t * 10) + run.coins * COIN_POINTS;
 // ---------- layout ----------
 
 function resize() {
-  const prev = { x0: view.x0, x1: view.x1 };
+  const prev = { ...view };
   const W = innerWidth;
   const H = innerHeight;
   view.W = W;
@@ -69,6 +71,30 @@ function resize() {
   const frac = prev.x1 > prev.x0 ? (player.x - prev.x0) / (prev.x1 - prev.x0) : 0.5;
   player.x = view.x0 + clamp(frac, 0, 1) * fieldW;
   clampPlayer();
+  if (!prev.W) return;
+  rescaleRun(prev);
+  // A width change is a rotation or window resize, so pause; height-only changes are usually the phone's address bar.
+  if (W !== prev.W) pause();
+}
+
+function rescaleRun(prev) {
+  const k = view.u / prev.u;
+  const fx = (view.x1 - view.x0) / (prev.x1 - prev.x0);
+  const fy = view.groundY / prev.groundY;
+  const mapX = (x) => view.x0 + (x - prev.x0) * fx;
+  for (const it of run.items) {
+    it.x = mapX(it.x);
+    it.y *= fy;
+    it.r *= k;
+    it.vy *= k;
+    it.g *= k;
+  }
+  for (const p of run.popups) {
+    p.x = mapX(p.x);
+    p.y *= fy;
+  }
+  run.particles = [];
+  player.vx *= k;
 }
 
 function clampPlayer() {
@@ -103,15 +129,18 @@ function updateCard() {
   $('player-sign-in').hidden = !ON_START_NG || !!who.user;
   $('player-card').hidden = false;
   $('menu-signin').hidden = !ON_START_NG || !!who.user || CHOSE_GUEST;
-  if (state === 'over') $('over-signin').hidden = !ON_START_NG || !!who.user;
+  if (state === 'over') $('over-signin').hidden = !ON_START_NG || !!who.user || CHOSE_GUEST;
 }
 
 function goSignIn() {
   location.href = signInUrl();
 }
 
-function maybeRefreshPlayer() {
-  if (!document.hidden && performance.now() - lastAsked > 1500) refreshPlayer();
+async function maybeRefreshPlayer() {
+  if (document.hidden || performance.now() - lastAsked <= 1500) return;
+  const before = who.user?.id;
+  await refreshPlayer();
+  if (state === 'menu' && who.user?.id !== before) loadBoard($('menu-board'));
 }
 
 // ---------- leaderboard ----------
@@ -168,6 +197,8 @@ async function saveRun(stats) {
   $('over-signin').hidden = true;
   if (!ON_START_NG) {
     msg.textContent = 'Play on coconut-dodge.start.ng to save your runs.';
+  } else if (!who.user && CHOSE_GUEST) {
+    msg.textContent = "You're playing as a guest, so this run isn't saved.";
   } else if (!who.user) {
     msg.textContent = 'Sign in to put runs like this on the leaderboard.';
     $('over-signin').hidden = false;
@@ -207,33 +238,46 @@ function startRun() {
   state = 'play';
   showPanel(null);
   updateHud(true);
-  canvas.focus?.();
 }
 
 function pause() {
-  if (state !== 'play') return;
+  if (state !== 'play' && state !== 'countdown') return;
   state = 'paused';
-  keys.clear();
+  held.clear();
+  run.shake = 0;
   showPanel('paused');
   $('resume-btn').focus();
 }
 
 function resume() {
   if (state !== 'paused') return;
-  state = 'play';
+  state = 'countdown';
+  countT = COUNTDOWN;
+  sfx.tick();
   showPanel(null);
+}
+
+function tickCountdown(dt) {
+  const shown = Math.ceil(countT);
+  countT -= dt;
+  if (countT <= 0) {
+    state = 'play';
+    sfx.tick(true);
+  } else if (Math.ceil(countT) !== shown) {
+    sfx.tick();
+  }
 }
 
 function endRun() {
   state = 'over';
-  keys.clear();
+  held.clear();
   pointer.active = false;
   const stats = { score: runScore(), coins: run.coins, survived: Math.floor(run.t) };
   $('res-score').textContent = stats.score.toLocaleString();
   $('res-coins').textContent = String(stats.coins);
   $('res-time').textContent = formatTime(stats.survived);
   const best = Number(localStorage.getItem(BEST_KEY)) || 0;
-  $('over').querySelector('.over-title').textContent = stats.score > best ? 'New best!' : 'Bonk!';
+  $('over').querySelector('.over-title').textContent = best > 0 && stats.score > best ? 'New best!' : 'Bonk!';
   if (stats.score > best) localStorage.setItem(BEST_KEY, String(stats.score));
   showPanel('over');
   $('again-btn').focus();
@@ -317,6 +361,7 @@ function getHit() {
   if (run.lives <= 0) {
     state = 'dying';
     run.dyingT = 0;
+    $('pause-btn').hidden = true;
     sfx.over();
   }
 }
@@ -328,8 +373,9 @@ function update(dt) {
   const maxV = 560 * u;
 
   if (state === 'play') {
-    const left = keys.has('arrowleft') || keys.has('a');
-    const right = keys.has('arrowright') || keys.has('d');
+    const dirs = [...held.values()];
+    const left = dirs.includes(-1);
+    const right = dirs.includes(1);
     if (left !== right) {
       player.vx = approach(player.vx, (right ? 1 : -1) * maxV, 4200 * u * dt);
     } else if (pointer.active) {
@@ -525,7 +571,7 @@ function render() {
   }
   backdrop.draw(ctx, clock);
 
-  const powered = state === 'play' || state === 'paused';
+  const powered = state === 'play' || state === 'paused' || state === 'countdown';
   if (powered && run.power.slow > 0) {
     const fade = Math.min(1, run.power.slow / 0.5, (POWERS.slow.duration - run.power.slow) / 0.3);
     ctx.fillStyle = `rgba(110,90,250,${0.13 * fade})`;
@@ -632,6 +678,22 @@ function render() {
     ctx.fillText(p.text, p.x, p.y);
   }
   ctx.globalAlpha = 1;
+
+  if (state === 'countdown') {
+    const n = Math.ceil(countT);
+    const k = countT - Math.floor(countT);
+    ctx.save();
+    ctx.translate(W / 2, H * 0.42);
+    ctx.scale(1 + k * 0.35, 1 + k * 0.35);
+    ctx.globalAlpha = clamp(0.3 + k, 0, 1);
+    ctx.font = `900 ${Math.round(110 * u)}px "Trebuchet MS", sans-serif`;
+    ctx.lineWidth = 10 * u;
+    ctx.strokeStyle = '#292a23';
+    ctx.strokeText(String(n), 0, 0);
+    ctx.fillStyle = '#ffd43b';
+    ctx.fillText(String(n), 0, 0);
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -639,7 +701,10 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  if (state !== 'paused') {
+  if (state === 'countdown') {
+    clock += dt;
+    tickCountdown(dt);
+  } else if (state !== 'paused') {
     clock += dt;
     update(dt);
   }
@@ -649,19 +714,25 @@ function frame(now) {
 
 // ---------- input ----------
 
-const MOVE_KEYS = new Set(['arrowleft', 'arrowright', 'a', 'd']);
+function moveDir(e) {
+  const key = e.key.toLowerCase();
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA' || key === 'a') return -1;
+  if (e.code === 'ArrowRight' || e.code === 'KeyD' || key === 'd') return 1;
+  return 0;
+}
 
 addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
-  if (MOVE_KEYS.has(key)) {
-    if (state === 'play') e.preventDefault();
-    keys.add(key);
+  const dir = moveDir(e);
+  if (dir) {
+    if (state === 'play' || state === 'countdown') e.preventDefault();
+    held.set(e.code, dir);
     pointer.active = false;
     return;
   }
   if (e.repeat) return;
   if (key === 'p' || key === 'escape') {
-    if (state === 'play') pause();
+    if (state === 'play' || state === 'countdown') pause();
     else if (state === 'paused') resume();
     return;
   }
@@ -672,8 +743,8 @@ addEventListener('keydown', (e) => {
     else if (state === 'paused') resume();
   }
 });
-addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
-addEventListener('blur', () => keys.clear());
+addEventListener('keyup', (e) => held.delete(e.code));
+addEventListener('blur', () => held.clear());
 
 canvas.addEventListener('pointerdown', (e) => {
   pointer.down = true;
@@ -681,14 +752,13 @@ canvas.addEventListener('pointerdown', (e) => {
   pointer.x = e.clientX;
 });
 addEventListener('pointermove', (e) => {
-  if (e.pointerType === 'mouse' || pointer.down) {
-    pointer.active = true;
-    pointer.x = e.clientX;
-  }
+  if (!pointer.down) return;
+  pointer.active = true;
+  pointer.x = e.clientX;
 });
-const release = (e) => {
+const release = () => {
   pointer.down = false;
-  if (e.pointerType !== 'mouse') pointer.active = false;
+  pointer.active = false;
 };
 addEventListener('pointerup', release);
 addEventListener('pointercancel', release);

@@ -64,6 +64,9 @@ export const sfx = {
   powerEnd() {
     tone(660, 0.18, { type: 'triangle', vol: 0.08, slide: 0.6 });
   },
+  tick(go = false) {
+    tone(go ? 1047 : 698, go ? 0.18 : 0.08, { type: 'square', vol: 0.05 });
+  },
   over() {
     [392, 330, 262, 196].forEach((f, i) => tone(f, 0.22, { type: 'triangle', vol: 0.15, delay: i * 0.14 }));
   },
